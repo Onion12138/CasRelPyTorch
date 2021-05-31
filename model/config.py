@@ -14,7 +14,7 @@ class Config(object):
 
         self.train_path = 'data/' + self.dataset + '/train.json'
         self.test_path = 'data/' + self.dataset + '/test.json'
-        self.dev_path = 'data/' + self.dataset + '/train.json'
+        self.dev_path = 'data/' + self.dataset + '/dev.json'
         self.rel_path = 'data/' + self.dataset + '/rel.json'
         self.num_relations = len(json.load(open(self.rel_path, 'r')))
 

@@ -1,14 +1,13 @@
 import argparse
 import torch
 import torch.optim as optim
-from model.casRel import CasRel
+from model.casRel import CasRel, MyCallBack
 from model.data import load_data, get_data_iterator
 from model.config import Config
 from model.evaluate import metric
-import time
 import os
 import torch.nn.functional as F
-from fastNLP import Trainer
+from fastNLP import Trainer, Tester, LossBase, MetricBase
 
 seed = 226
 torch.manual_seed(seed)
@@ -26,25 +25,21 @@ args = parser.parse_args()
 con = Config(args)
 
 
-def logging(s, print_=True, log_=False):
-    if print_:
-        print(s)
-    if log_:
-        with open(os.path.join(con.save_logs_dir, con.log_save_name), 'a+') as f_log:
-            f_log.write(s + '\n')
-
-
-def loss_fn(pred, gold, mask):
-    pred = pred.squeeze(-1)
-    loss = F.binary_cross_entropy(pred, gold, reduction='none')
-    if loss.shape != mask.shape:
-        mask = mask.unsqueeze(-1)
-    loss = torch.sum(loss * mask) / torch.sum(mask)
-    return loss
-
-
-from model.casRel import MyCallBack
-from fastNLP import LossBase
+# def logging(s, print_=True, log_=False):
+#     if print_:
+#         print(s)
+#     if log_:
+#         with open(os.path.join(con.save_logs_dir, con.log_save_name), 'a+') as f_log:
+#             f_log.write(s + '\n')
+#
+#
+# def loss_fn(pred, gold, mask):
+#     pred = pred.squeeze(-1)
+#     loss = F.binary_cross_entropy(pred, gold, reduction='none')
+#     if loss.shape != mask.shape:
+#         mask = mask.unsqueeze(-1)
+#     loss = torch.sum(loss * mask) / torch.sum(mask)
+#     return loss
 
 
 class MyLoss(LossBase):
@@ -69,23 +64,86 @@ class MyLoss(LossBase):
 
     def __call__(self, pred_dict, target_dict, check=False):
         loss = self.get_loss(pred_dict, target_dict)
-        if not (isinstance(loss, torch.Tensor) and len(loss.size()) == 0):
-            if not isinstance(loss, torch.Tensor):
-                raise TypeError(f"Loss excepted to be a torch.Tensor, got {type(loss)}")
-            loss = torch.sum(loss) / (loss.view(-1)).size(0)
         return loss
+
+
+# class MyMetric(MetricBase):
+#     def __init__(self):
+#         super(MyMetric, self).__init__()
+#         self.h_bar = 0.5
+#         self.t_bar = 0.5
+#         self.tokenizer = None
+#     def get_metric(self, reset=True):
+#
+#
+#     def evaluate(self, *args, **kwargs):
+#         token_ids = batch_x['token_ids']
+#         mask = batch_x['mask']
+#         encoded_text = model.get_encoded_text(token_ids, mask)
+#         pred_sub_heads, pred_sub_tails = model.get_subs(encoded_text)
+#         sub_heads = np.where(pred_sub_heads.cpu()[0] > self.h_bar)[0]
+#         sub_tails = np.where(pred_sub_tails.cpu()[0] > self.t_bar)[0]
+#         subjects = []
+#         for sub_head in sub_heads:
+#             sub_tail = sub_tails[sub_tails >= sub_head]
+#             if len(sub_tail) > 0:
+#                 sub_tail = sub_tail[0]
+#                 subject = ''.join(tokenizer.decode(token_ids[0][sub_head: sub_tail + 1]).split())
+#                 subjects.append((subject, sub_head, sub_tail))
+#         if subjects:
+#             triple_list = []
+#             repeated_encoded_text = encoded_text.repeat(len(subjects), 1, 1)
+#             sub_head_mapping = torch.zeros((len(subjects), 1, encoded_text.size(1)), dtype=torch.float).to(device)
+#             sub_tail_mapping = torch.zeros((len(subjects), 1, encoded_text.size(1)), dtype=torch.float).to(device)
+#             for subject_idx, subject in enumerate(subjects):
+#                 sub_head_mapping[subject_idx][0][subject[1]] = 1
+#                 sub_tail_mapping[subject_idx][0][subject[2]] = 1
+#             pred_obj_heads, pred_obj_tails = model.get_objs_for_specific_sub(sub_head_mapping, sub_tail_mapping,
+#                                                                              repeated_encoded_text)
+#             for subject_idx, subject in enumerate(subjects):
+#                 sub = subject[0]
+#                 obj_heads = np.where(pred_obj_heads.cpu()[subject_idx] > self.h_bar)
+#                 obj_tails = np.where(pred_obj_tails.cpu()[subject_idx] > self.t_bar)
+#                 for obj_head, rel_head in zip(*obj_heads):
+#                     for obj_tail, rel_tail in zip(*obj_tails):
+#                         if obj_head <= obj_tail and rel_head == rel_tail:
+#                             rel = rel_vocab.to_word(int(rel_head))
+#                             obj = ''.join(tokenizer.decode(token_ids[0][obj_head: obj_tail + 1]).split())
+#                             triple_list.append((sub, rel, obj))
+#                             break
+#
+#             triple_set = set()
+#             for s, r, o in triple_list:
+#                 triple_set.add((s, r, o))
+#             pred_list = list(triple_set)
+#
+#         else:
+#             pred_list = []
+#
+#         pred_triples = set(pred_list)
+#         gold_triples = set(to_tuple(batch_y['triples'][0]))
+#         correct_num += len(pred_triples & gold_triples)
+#         predict_num += len(pred_triples)
+#         gold_num += len(gold_triples)
 
 
 if __name__ == '__main__':
     model = CasRel(con).to(device)
     data_bundle, rel_vocab = load_data(con.train_path, con.dev_path, con.test_path, con.rel_path)
     train_data = get_data_iterator(con, data_bundle.get_dataset('train'), rel_vocab)
+    dev_data = get_data_iterator(con, data_bundle.get_dataset('dev'), rel_vocab, is_test=True)
     test_data = get_data_iterator(con, data_bundle.get_dataset('test'), rel_vocab, is_test=True)
     optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=con.lr)
     trainer = Trainer(train_data=train_data, model=model, optimizer=optimizer, batch_size=con.batch_size,
                       n_epochs=con.max_epoch, loss=MyLoss(), print_every=con.period, use_tqdm=True,
-                      callbacks=MyCallBack(train_data, rel_vocab, con))
+                      callbacks=MyCallBack(dev_data, rel_vocab, con))
     trainer.train()
+
+    precision, recall, f1_score = metric(test_data, rel_vocab, con, model)
+    # tester = Tester(data=test_data, model=model, metrics=MyMetric())
+    # tester.test()
+    #
+    # tester = Test(test_data)
 # def run():
 #     print("-" * 5 + "Initializing the model" + "-" * 5)
 #     model = CasRel(con).to(device)

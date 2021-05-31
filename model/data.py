@@ -78,8 +78,7 @@ class MyDataset(DataSet):
                     obj_heads[ro[0]][ro[2]] = 1
                     obj_tails[ro[1]][ro[2]] = 1
 
-        return token_ids, masks, text_len, sub_heads, sub_tails, sub_head, sub_tail, obj_heads, obj_tails, \
-               json_data['spo_list']
+        return token_ids, masks, sub_heads, sub_tails, sub_head, sub_tail, obj_heads, obj_tails, json_data['spo_list']
 
     def __len__(self):
         return len(self.dataset)
@@ -87,8 +86,7 @@ class MyDataset(DataSet):
 
 def my_collate_fn(batch):
     batch = list(filter(lambda x: x is not None, batch))
-    batch.sort(key=lambda x: x[2], reverse=True)
-    token_ids, masks, tex_len, sub_heads, sub_tails, sub_head, sub_tail, obj_heads, obj_tails, triples = zip(*batch)
+    token_ids, masks, sub_heads, sub_tails, sub_head, sub_tail, obj_heads, obj_tails, triples = zip(*batch)
     batch_token_ids = pad_sequence(token_ids, batch_first=True)
     batch_masks = pad_sequence(masks, batch_first=True)
     batch_sub_heads = pad_sequence(sub_heads, batch_first=True)
@@ -98,26 +96,24 @@ def my_collate_fn(batch):
     batch_obj_heads = pad_sequence(obj_heads, batch_first=True)
     batch_obj_tails = pad_sequence(obj_tails, batch_first=True)
 
-    return {
-               "token_ids": batch_token_ids.to(device),
-               "mask": batch_masks.to(device),
-               "sub_head": batch_sub_head.to(device),
-               "sub_tail": batch_sub_tail.to(device),
-               "sub_heads": batch_sub_heads.to(device),
-           }, {"mask": batch_masks.to(device),
-               "sub_heads": batch_sub_heads.to(device),
-               "sub_tails": batch_sub_tails.to(device),
-               "obj_heads": batch_obj_heads.to(device),
-               "obj_tails": batch_obj_tails.to(device),
-               "triples": triples
-               }
+    return {"token_ids": batch_token_ids.to(device),
+            "mask": batch_masks.to(device),
+            "sub_head": batch_sub_head.to(device),
+            "sub_tail": batch_sub_tail.to(device),
+            "sub_heads": batch_sub_heads.to(device),
+            }, \
+           {"mask": batch_masks.to(device),
+            "sub_heads": batch_sub_heads.to(device),
+            "sub_tails": batch_sub_tails.to(device),
+            "obj_heads": batch_obj_heads.to(device),
+            "obj_tails": batch_obj_tails.to(device),
+            "triples": triples
+            }
 
 
 class MyRandomSampler(Sampler):
     def __call__(self, data_set):
         return np.random.permutation(len(data_set)).tolist()
-
-
 
 
 def get_data_iterator(config, dataset, rel_vocab, is_test=False, collate_fn=my_collate_fn):

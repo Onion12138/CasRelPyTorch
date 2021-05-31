@@ -36,17 +36,11 @@ class CasRel(nn.Module):
         pred_obj_tails = torch.sigmoid(self.obj_tails_linear(encoded_text))
         return pred_obj_heads, pred_obj_tails
 
-    def forward(self, **data):
-        # def forward(self, token_ids, mask, sub_head, sub_tail):
-        # print(data)
-        token_ids = data['token_ids']
-        mask = data['mask']
+    def forward(self, token_ids, mask, sub_head, sub_tail):
         encoded_text = self.get_encoded_text(token_ids, mask)
         pred_sub_heads, pred_sub_tails = self.get_subs(encoded_text)
-        sub_head_mapping = data['sub_head'].unsqueeze(1)
-        # sub_head_mapping = sub_head.unsqueeze(1)
-        sub_tail_mapping = data['sub_tail'].unsqueeze(1)
-        # sub_tail_mapping = sub_tail.unsqueeze(1)
+        sub_head_mapping = sub_head.unsqueeze(1)
+        sub_tail_mapping = sub_tail.unsqueeze(1)
         pred_obj_heads, pre_obj_tails = self.get_objs_for_specific_sub(sub_head_mapping, sub_tail_mapping, encoded_text)
 
         return {
@@ -57,12 +51,13 @@ class CasRel(nn.Module):
         }
 
 
-
-
-
 class MyCallBack(Callback):
     def __init__(self, data_iter, rel_vocab, config):
         super().__init__()
+        self.best_epoch = 0
+        self.best_recall = 0
+        self.best_precision = 0
+        self.best_f1_score = 0
         self.loss_sum = 0
         self.global_step = 0
 
@@ -77,16 +72,11 @@ class MyCallBack(Callback):
             with open(os.path.join(self.config.save_logs_dir, self.config.log_save_name), 'a+') as f_log:
                 f_log.write(s + '\n')
 
-
     def on_train_begin(self):
-        self.best_f1_score = 0
-        self.best_precision = 0
-        self.best_recall = 0
 
-        self.best_epoch = 0
         self.init_time = time.time()
         self.start_time = time.time()
-        print("-" * 5 + "Initializing the model" + "-" * 5)
+        self.logging("-" * 5 + "Initializing the model" + "-" * 5)
 
     def on_epoch_begin(self):
         self.eval_start_time = time.time()
@@ -95,6 +85,7 @@ class MyCallBack(Callback):
         precision, recall, f1_score = metric(self.data_iter, self.rel_vocab, self.config, self.model)
         self.logging('epoch {:3d}, eval time: {:5.2f}s, f1: {:4.2f}, precision: {:4.2f}, recall: {:4.2f}'.
                      format(self.epoch, time.time() - self.eval_start_time, f1_score, precision, recall))
+
         if f1_score > self.best_f1_score:
             self.best_f1_score = f1_score
             self.best_epoch = self.epoch
@@ -110,5 +101,4 @@ class MyCallBack(Callback):
         self.logging("best epoch: {:3d}, best f1: {:4.2f}, precision: {:4.2f}, recall: {:4.2}, total time: {:5.2f}s".
                      format(self.best_epoch, self.best_f1_score, self.best_precision, self.best_recall,
                             time.time() - self.init_time))
-
 

@@ -1,9 +1,10 @@
-import numpy as np
 import torch
 import os
 import json
 from transformers import BertTokenizer
 from tqdm import tqdm
+
+device = torch.device("cuda" if torch.cuda.is_available() else "gpu")
 
 
 def to_tuple(triple_list):
@@ -14,11 +15,6 @@ def to_tuple(triple_list):
 
 
 def metric(data_iter, rel_vocab, config, model, output=True, h_bar=0.5, t_bar=0.5):
-    if output:
-        if not os.path.exists(config.result_dir):
-            os.mkdir(config.result_dir)
-        path = os.path.join(config.result_dir, config.result_save_name)
-        fw = open(path, 'w')
 
     orders = ['subject', 'relation', 'object']
     correct_num, predict_num, gold_num = 0, 0, 0
@@ -30,8 +26,8 @@ def metric(data_iter, rel_vocab, config, model, output=True, h_bar=0.5, t_bar=0.
             mask = batch_x['mask']
             encoded_text = model.get_encoded_text(token_ids, mask)
             pred_sub_heads, pred_sub_tails = model.get_subs(encoded_text)
-            sub_heads = np.where(pred_sub_heads.cpu()[0] > h_bar)[0]
-            sub_tails = np.where(pred_sub_tails.cpu()[0] > t_bar)[0]
+            sub_heads = torch.where(pred_sub_heads[0] > h_bar)[0]
+            sub_tails = torch.where(pred_sub_tails[0] > t_bar)[0]
             subjects = []
             for sub_head in sub_heads:
                 sub_tail = sub_tails[sub_tails >= sub_head]
@@ -42,8 +38,10 @@ def metric(data_iter, rel_vocab, config, model, output=True, h_bar=0.5, t_bar=0.
             if subjects:
                 triple_list = []
                 repeated_encoded_text = encoded_text.repeat(len(subjects), 1, 1)
-                sub_head_mapping = torch.zeros((len(subjects), 1, encoded_text.size(1)), dtype=torch.float).to(device)
-                sub_tail_mapping = torch.zeros((len(subjects), 1, encoded_text.size(1)), dtype=torch.float).to(device)
+                sub_head_mapping = torch.zeros((len(subjects), 1, encoded_text.size(1)), dtype=torch.float,
+                                               device=device)
+                sub_tail_mapping = torch.zeros((len(subjects), 1, encoded_text.size(1)), dtype=torch.float,
+                                               device=device)
                 for subject_idx, subject in enumerate(subjects):
                     sub_head_mapping[subject_idx][0][subject[1]] = 1
                     sub_tail_mapping[subject_idx][0][subject[2]] = 1
@@ -51,8 +49,8 @@ def metric(data_iter, rel_vocab, config, model, output=True, h_bar=0.5, t_bar=0.
                                                                                  repeated_encoded_text)
                 for subject_idx, subject in enumerate(subjects):
                     sub = subject[0]
-                    obj_heads = np.where(pred_obj_heads.cpu()[subject_idx] > h_bar)
-                    obj_tails = np.where(pred_obj_tails.cpu()[subject_idx] > t_bar)
+                    obj_heads = torch.where(pred_obj_heads[subject_idx] > h_bar)
+                    obj_tails = torch.where(pred_obj_tails[subject_idx] > t_bar)
                     for obj_head, rel_head in zip(*obj_heads):
                         for obj_tail, rel_tail in zip(*obj_tails):
                             if obj_head <= obj_tail and rel_head == rel_tail:
@@ -76,6 +74,10 @@ def metric(data_iter, rel_vocab, config, model, output=True, h_bar=0.5, t_bar=0.
             gold_num += len(gold_triples)
 
             if output:
+                if not os.path.exists(config.result_dir):
+                    os.mkdir(config.result_dir)
+                path = os.path.join(config.result_dir, config.result_save_name)
+                fw = open(path, 'w')
                 result = json.dumps({
                     'triple_list_gold': [
                         dict(zip(orders, triple)) for triple in gold_triples
@@ -91,8 +93,10 @@ def metric(data_iter, rel_vocab, config, model, output=True, h_bar=0.5, t_bar=0.
                     ]
                 }, ensure_ascii=False)
                 fw.write(result + '\n')
+
     print("correct_num: {:3d}, predict_num: {:3d}, gold_num: {:3d}".format(correct_num, predict_num, gold_num))
     precision = correct_num / (predict_num + 1e-10)
     recall = correct_num / (gold_num + 1e-10)
     f1_score = 2 * precision * recall / (precision + recall + 1e-10)
+    print('f1: {:4.2f}, precision: {:4.2f}, recall: {:4.2f}'.format(f1_score, precision, recall))
     return precision, recall, f1_score
