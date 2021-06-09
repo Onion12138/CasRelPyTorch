@@ -4,7 +4,7 @@ import json
 from transformers import BertTokenizer
 from tqdm import tqdm
 
-device = torch.device("cuda" if torch.cuda.is_available() else "gpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def to_tuple(triple_list):
