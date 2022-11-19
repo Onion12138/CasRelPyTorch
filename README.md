@@ -1,3 +1,6 @@
+# Notice
+This repository is no longer maintained.
+If any issues, check by yourself.
 # CasRel Model Pytorch reimplement 3
 The code is the PyTorch reimplement of the paper "A Novel Cascade Binary Tagging Framework for Relational Triple Extraction" ACL2020. 
 The [official code](https://github.com/weizhepei/CasRel) was written in keras. 
